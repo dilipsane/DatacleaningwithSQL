@@ -1,0 +1,134 @@
+USE project
+
+/* 
+We are going to perform a series of data cleaninig process on Nashville Housing data
+*/
+
+--Analysing the data 
+
+SELECT * FROM Nashville_Housing
+
+--- Handling Null values in PropertyAddress
+
+SELECT * FROM Nashville_Housing WHERE PropertyAddress IS NULL   --Checking for null values on propertyaddress column
+
+SELECT * FROM Nashville_Housing ORDER BY ParcelID     --Ordering by parceID showed us the propertyaddress values are null but their parcel_id are same
+
+SELECT a.uniqueID, a.ParcelID, a.PropertyAddress,b.UniqueID, b.ParcelID, b.PropertyAddress, ISNULL(a.propertyaddress,b.propertyaddress)
+FROM Nashville_Housing a
+JOIN Nashville_Housing b 
+	ON a.ParcelID = b.ParcelID
+	AND a.UniqueID <> b.UniqueID
+WHERE a.propertyAddress IS NULL    -- We are going to handle null values by self joining the tables
+
+Update a
+SET PropertyAddress = ISNULL(a.propertyaddress,b.propertyaddress)
+FROM Nashville_Housing a
+JOIN Nashville_Housing b 
+	ON a.ParcelID = b.ParcelID
+	AND a.UniqueID <> b.UniqueID
+WHERE a.propertyAddress IS NULL   --- Updating original table with the updated null values as per above code 
+
+
+---- As the sale date has both date and time stamp which we are going to update it to only date variable 
+
+SELECT CONVERT(DATE, SaleDate,23) AS ExtractedDate
+FROM Nashville_Housing
+
+ALTER TABLE Nashville_Housing
+ALTER COLUMN SaleDate DATE;     ---- removed the timestamp from sale date keeping only date 
+
+
+----Breaking down the Property address by their city names 
+
+SELECT SUBSTRING(PropertyAddress,1,CHARINDEX(',',PropertyAddress) - 1) AS Firstpart
+, SUBSTRING(PropertyAddress,CHARINDEX(',',PropertyAddress) + 1, LEN(PropertyAddress)) AS Secondpart
+FROM Nashville_Housing
+
+ALTER TABLE nashville_housing
+ADD P_address VARCHAR(150),
+	C_address VARCHAR(150);
+	
+UPDATE Nashville_Housing
+SET P_address = SUBSTRING(PropertyAddress,1,CHARINDEX(',',PropertyAddress) - 1),
+	C_address = SUBSTRING(PropertyAddress,CHARINDEX(',',PropertyAddress) + 1, LEN(PropertyAddress))
+FROM Nashville_Housing   ----main table is updated with 2 new columns one will contain the address and other one will store the City name 
+
+ALTER TABLE nashville_housing
+DROP COLUMN propertyAddress   --- We are dropping the original column of property address
+
+------ We are splitting up the owneraddress into three different coumns
+
+SELECT 
+	PARSENAME(REPLACE(OwnerAddress, ',','.'),3),
+	PARSENAME(REPLACE(OwnerAddress, ',','.'),2),
+	PARSENAME(REPLACE(OwnerAddress, ',','.'),1)
+FROM Nashville_Housing
+
+ALTER TABLE nashville_housing
+ADD O_address VARCHAR(150),
+	O_City VARCHAR(150),
+	O_State VARCHAR(150);
+
+UPDATE Nashville_Housing
+SET O_address = PARSENAME(REPLACE(OwnerAddress, ',','.'),3),
+	O_City = PARSENAME(REPLACE(OwnerAddress, ',','.'),2),
+	O_State = PARSENAME(REPLACE(OwnerAddress, ',','.'),1)
+FROM Nashville_Housing         ----Set our new columns with the address, city & state names 
+
+-----
+
+---- Changing Y and N to Yes and No in SoldAsVacant column
+
+SELECT DISTINCT(SoldAsVacant), COUNT(soldasvacant)
+FROM Nashville_Housing
+GROUP BY SoldAsVacant    ----Grouping by soldasvacant to see how many distnict values are present Y,Yes,N,No
+
+
+SELECT COUNT(*),
+	(CASE 
+		WHEN SoldAsVacant = 'Y' THEN 'Yes'
+		WHEN SoldAsVacant = 'N' THEN 'No'
+		ELSE SoldAsVacant
+	END) NsoldORvacant
+FROM nashville_housing
+GROUP BY 
+	(CASE 
+        WHEN SoldAsVacant = 'Y' THEN 'Yes'
+        WHEN SoldAsVacant = 'N' THEN 'No'
+        ELSE SoldAsVacant
+    END);						-------Changing Y to Yes and N to No and using grouping by to match the values with the above values
+
+UPDATE Nashville_Housing
+SET SoldAsVacant = CASE 
+		WHEN SoldAsVacant = 'Y' THEN 'Yes'
+		WHEN SoldAsVacant = 'N' THEN 'No'
+		ELSE SoldAsVacant
+	END							--- Updating the table with the coverted information.
+
+
+-----Removing duplicate rows
+
+WITH dupcte AS(
+	SELECT *, ROW_NUMBER() OVER(PARTITION BY ParcelID,SalePrice, SaleDate,P_address ORDER BY uniqueID) AS rownum
+	FROM Nashville_Housing
+)
+SELECT *
+FROM dupcte
+WHERE rownum > 1
+
+SELECT * FROM Nashville_Housing
+
+----- Delete Unused columns
+
+ALTER TABLE Nashville_Housing
+DROP COLUMN OwnerAddress
+
+
+SELECT * FROM Nashville_Housing
+
+--------------**------------------
+
+
+
+
